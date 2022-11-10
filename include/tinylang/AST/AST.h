@@ -95,8 +95,8 @@ namespace tinylang {
         Expr *E;
 
     public:
-        ConstantDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name)
-            : Decl(DK_Const, EnclosingDecl, Loc, Name) {}
+        ConstantDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name, Expr *E)
+            : Decl(DK_Const, EnclosingDecl, Loc, Name), E(E) {}
 
         Expr *getExpr() { return E; }
 

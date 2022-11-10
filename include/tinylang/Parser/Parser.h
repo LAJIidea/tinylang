@@ -8,6 +8,7 @@
 #include "tinylang/Basic/Diagnostic.h"
 #include "tinylang/Lexer/Lexer.h"
 #include "tinylang/AST/AST.h"
+#include "tinylang/Sema/Sema.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -18,6 +19,8 @@ namespace tinylang {
     class Parser {
 
         Lexer &Lex;
+
+        Sema &Actions;
 
         Token Tok;
 
@@ -77,7 +80,7 @@ namespace tinylang {
         bool parseIdentList(IdentList &Ids);
 
     public:
-        Parser(Lexer &Lex);
+        Parser(Lexer &Lex, Sema &Actions);
 
         ModuleDeclaration *parse();
 

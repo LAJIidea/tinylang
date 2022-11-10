@@ -16,11 +16,14 @@ namespace {
 bool Parser::parseCompilationUnit(ModuleDeclaration *&D) {
     DeclList decls;
     StmtList stmts;
+    EnterDeclScope *S;
     if (consume(tok::kw_MODULE))
         goto _error;
     if (expect(tok::identifier))
         goto _error;
-    // todo SemaOnModuleDeclaration
+    D = Actions.actOnModuleDeclaration(Tok.getLocation(), Tok.getIdentifier());
+    S  = new EnterDeclScope(Actions, D);
+
     advance();
     if (consume(tok::semi))
         goto _error;
@@ -32,16 +35,20 @@ bool Parser::parseCompilationUnit(ModuleDeclaration *&D) {
         goto _error;
     if (expect(tok::identifier))
         goto _error;
-    // todo SemaModuleDeclaration
+    Actions.actOnModuleDeclaration(D, Tok.getLocation(), Tok.getIdentifier(),
+                                   decls, stmts);
     advance();
     if (consume(tok::period))
         goto _error;
+
+    delete S;
     return false;
 
 _error:
     while (!Tok.is(tok::eof)) {
         advance();
     }
+    delete S;
     return false;
 }
 
@@ -61,7 +68,8 @@ bool Parser::parseImport() {
         goto _error;
     if (expect(tok::semi))
         goto _error;
-    // todo SemaOnImport
+    Actions.actOnImport(ModuleName, Ids);
+
     advance();
     return false;
 _error:
@@ -151,7 +159,7 @@ bool Parser::parseConstantDeclaration(DeclList &Decls) {
     advance();
     if (parseExpression(E))
         goto _error;
-    // todo SemaOnConstantDeclaration
+    Actions.actOnConstantDeclaration(Decls, Loc, Name, E);
     return false;
 _error:
     while (!Tok.is(tok::semi)) {
@@ -169,7 +177,8 @@ bool Parser::parseVariableDeclaration(DeclList &Decls) {
         goto _error;
     if (parseQualident(D))
         goto _error;
-    // todo SemaOnVariableDeclaration
+    Actions.actOnVariableDeclaration(Decls, Ids, D);
+    return false;
 _error:
     while (!Tok.is(tok::semi)) {
         advance();
@@ -183,19 +192,22 @@ bool Parser::parseProcedureDeclaration(DeclList &ParentDecls) {
     ProcedureDeclaration *D;
     FormalParamList  Params;
     Decl *RetType = nullptr;
+    EnterDeclScope *S;
     DeclList Decls;
     StmtList Stmts;
     if (consume(tok::kw_PROCEDURE))
         goto _error;
     if (expect(tok::identifier))
         goto _error;
-    // todo SemaOnProcedureDeclaration
+    D = Actions.actOnProcedureDeclaration(Tok.getLocation(), Tok.getIdentifier());
+
+    S = new EnterDeclScope(Actions, D);
     advance();
     if (Tok.is(tok::l_paren)) {
         if (parseFormalParameters(Params, RetType))
             goto _error;
     }
-    // todo SemaOnProcedureHeading
+    Actions.actOnProcedureHeading(D, Params, RetType);
     if (expect(tok::semi))
         goto _error;
     advance();
@@ -203,17 +215,23 @@ bool Parser::parseProcedureDeclaration(DeclList &ParentDecls) {
         goto _error;
     if (expect(tok::identifier))
         goto _error;
-    // todo SemaOnProcedureDeclaration
+    Actions.actOnProcedureDeclaration(D, Tok.getLocation(),
+                                      Tok.getIdentifier(),
+                                      Decls, Stmts);
 
     ParentDecls.push_back(D);
     advance();
+    delete S;
     return false;
 _error:
     while (!Tok.is(tok::semi)) {
         advance();
-        if (Tok.is(tok::eof))
+        if (Tok.is(tok::eof)) {
+            delete S;
             return true;
+        }
     }
+    delete S;
     return false;
 }
 
@@ -273,7 +291,7 @@ bool Parser::parseFormalParameter(FormalParamList &Params) {
         goto _error;
     if (parseQualident(D))
         goto _error;
-    // todo SemaOnFormalParameterDeclaration
+    Actions.actOnFormalParameterDeclaration(Params, Ids, D, IsVar);
     return false;
 _error:
     while (!Tok.isOneOf(tok::r_paren, tok::semi)) {
@@ -313,7 +331,7 @@ bool Parser::parseStatement(StmtList &Stmts) {
             advance();
             if (parseExpression(E))
                 goto _error;
-            // todo SemaOnAssignment
+            Actions.actOnAssignment(Stmts, Loc, D, E);
         } else if (Tok.is(tok::l_paren)) {
             ExprList Exprs;
             if (Tok.is(tok::l_paren)) {
@@ -327,7 +345,7 @@ bool Parser::parseStatement(StmtList &Stmts) {
                 if (consume(tok::r_paren))
                     goto _error;
             }
-            // todo SemaOnProCall
+            Actions.actOnProcCall(Stmts, Loc, D, Exprs);
         }
     } else if (Tok.is(tok::kw_IF)) {
         if (parseIfStatement(Stmts))
@@ -373,7 +391,7 @@ bool Parser::parseIfStatement(StmtList &Stmts) {
     }
     if (expect(tok::kw_END))
         goto _error;
-    // todo SemaOnIfStatement
+    Actions.actOnIfStatement(Stmts, Loc, E, IfStmts, ElseStmts);
 
     advance();
     return false;
@@ -398,7 +416,7 @@ bool Parser::parseWhileStatement(StmtList &Stmts) {
         goto _error;
     if (parseStatementSequence(WhileStmts))
         goto _error;
-    // todo SemaOnWhileStatement
+    Actions.actOnWhileStatement(Stmts, Loc, E, WhileStmts);
     advance();
     return false;
 _error:
@@ -421,7 +439,7 @@ bool Parser::parseReturnStatement(StmtList &Stmts) {
         if (parseExpression(E))
             goto _error;
     }
-    // todo SemaOnReturnStatement
+    Actions.actOnReturnStatement(Stmts, Loc, E);
     return false;
 _error:
     while (!Tok.isOneOf(tok::semi, tok::kw_ELSE, tok::kw_END)) {
@@ -468,7 +486,7 @@ bool Parser::parseExpression(Expr *&E) {
             goto _error;
         if (parseSimpleExpression(Right))
             goto _error;
-        // todo SemaOnExpression
+        E = Actions.actOnExpression(E, Right, Op);
     }
     return false;
 _error:
@@ -535,11 +553,10 @@ bool Parser::parseSimpleExpression(Expr *&E) {
             goto _error;
         if (parseTerm(Right))
             goto _error;
-        // todo SemaOnSimpleExpression
+        E = Actions.actOnSimpleExpression(E, Right, Op);
     }
     if (!PrefixOp.isUnspecified())
-        // todo SemaOnPrefixExpression
-        E = nullptr;
+        E = Actions.actOnPrefixExpression(E, PrefixOp);
     return false;
 _error:
     while (!Tok.isOneOf(tok::hash, tok::r_paren, tok::comma, tok::semi,
@@ -588,7 +605,7 @@ bool Parser::parseTerm(Expr *&E) {
             goto _error;
         if (parseFactor(Right))
             goto _error;
-        // todo SemaOnTerm
+        E = Actions.actOnTerm(E, Right, Op);
     }
     return false;
 _error:
@@ -634,7 +651,7 @@ _error:
 
 bool Parser::parseFactor(Expr *&E) {
     if (Tok.is(tok::integer_literal)) {
-        // todo SemaOnIntegerLiteral
+        E - Actions.actOnIntegerLiteral(Tok.getLocation(), Tok.getLiteralData());
         advance();
     } else if (Tok.is(tok::identifier)) {
         Decl *D;
@@ -651,7 +668,7 @@ bool Parser::parseFactor(Expr *&E) {
             }
             if (expect(tok::r_paren))
                 goto _error;
-            // todo SemaOnFunctionCall
+            E = Actions.actOnFunctionCall(D, Exprs);
             advance();
         } else if (Tok.isOneOf(
                     tok::hash, tok::r_paren, tok::star,
@@ -662,7 +679,7 @@ bool Parser::parseFactor(Expr *&E) {
                     tok::kw_ELSE, tok::kw_END, tok::kw_MOD,
                     tok::kw_OR, tok::kw_THEN
                 )) {
-            // todo SemaOnVariable
+            E = Actions.actOnVariable(D);
         }
     } else if (Tok.is(tok::l_paren)) {
         advance();
@@ -675,7 +692,7 @@ bool Parser::parseFactor(Expr *&E) {
         advance();
         if (parseFactor(E))
             goto _error;
-        // todo SemaOnPrefixExpression
+        E = Actions.actOnPrefixExpression(E, Op);
     } else {
         goto _error;
     }
@@ -699,14 +716,15 @@ bool Parser::parseQualident(Decl *&D) {
     D = nullptr;
     if (expect(tok::identifier))
         goto _error;
-    // todo SemaOnQualIdentPart
+    D = Actions.actOnQualIdentPart(D, Tok.getLocation(),
+                                   Tok.getIdentifier());
     advance();
     while (Tok.is(tok::period) &&
            (isa<ModuleDeclaration>(D))) {
         advance();
         if (expect(tok::identifier))
             goto _error;
-        // todo SemaOnQualIdentPart
+        D = Actions.actOnQualIdentPart(D, Tok.getLocation(), Tok.getIdentifier());
     }
     return false;
 _error:
@@ -750,7 +768,7 @@ _error:
     return false;
 }
 
-Parser::Parser(Lexer &Lex): Lex(Lex) {
+Parser::Parser(Lexer &Lex, Sema &Actions): Lex(Lex), Actions(Actions) {
     advance();
 }
 
