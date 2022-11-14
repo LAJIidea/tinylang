@@ -27,6 +27,7 @@ int main(int argc, const char **argv_)
             continue;
         }
 
+        // Source Message report, llvm发出错误消息的类
         llvm::SourceMgr SrcMgr;
         DiagnosticsEngine Diags(SrcMgr);
 

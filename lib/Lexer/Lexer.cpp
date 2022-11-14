@@ -37,7 +37,7 @@ namespace charinfo {
 
     // 检测是否是水平空格
     LLVM_READNONE inline bool isHorizontalWhitespace(char ch) {
-        return isASCII(ch) && (ch == ' ' || ch == '\t' || ch == '\f', ch == '\v');
+        return isASCII(ch) && (ch == ' ' || ch == '\t' || ch == '\f'|| ch == '\v');
     }
 
     LLVM_READNONE inline bool isWhitespace(char ch) {

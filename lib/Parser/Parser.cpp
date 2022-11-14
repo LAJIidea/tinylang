@@ -175,6 +175,8 @@ bool Parser::parseVariableDeclaration(DeclList &Decls) {
     IdentList Ids;
     if (parseIdentList(Ids))
         goto _error;
+    if (consume(tok::colon))
+        goto _error;
     if (parseQualident(D))
         goto _error;
     Actions.actOnVariableDeclaration(Decls, Ids, D);
@@ -242,7 +244,7 @@ bool Parser::parseFormalParameters(FormalParamList &Params, Decl *&RetType) {
         if (parseFormalParameter(Params))
             goto _error;
     }
-    if (consume(tok::l_paren))
+    if (consume(tok::r_paren))
         goto _error;
     if (Tok.is(tok::colon)) {
         advance();
@@ -350,11 +352,8 @@ bool Parser::parseStatement(StmtList &Stmts) {
     } else if (Tok.is(tok::kw_IF)) {
         if (parseIfStatement(Stmts))
             goto _error;
-    } else if (Tok.is(tok::kw_IF)) {
-        if (parseIfStatement(Stmts))
-            goto _error;
     } else if (Tok.is(tok::kw_WHILE)) {
-        if (parseIfStatement(Stmts))
+        if (parseWhileStatement(Stmts))
             goto _error;
     } else if (Tok.is(tok::kw_RETURN)) {
         if (parseReturnStatement(Stmts))
@@ -651,7 +650,7 @@ _error:
 
 bool Parser::parseFactor(Expr *&E) {
     if (Tok.is(tok::integer_literal)) {
-        E - Actions.actOnIntegerLiteral(Tok.getLocation(), Tok.getLiteralData());
+        E = Actions.actOnIntegerLiteral(Tok.getLocation(), Tok.getLiteralData());
         advance();
     } else if (Tok.is(tok::identifier)) {
         Decl *D;
