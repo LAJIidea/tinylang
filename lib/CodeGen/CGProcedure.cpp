@@ -205,10 +205,135 @@ CGProcedure::createFunction(ProcedureDeclaration *Proc, FunctionType *FTy) {
     return Fn;
 }
 
+Value *CGProcedure::emitInfixExpr(InfixExpression *E) {
+    Value *Left = emitExpr(E->getLeft());
+    Value *Right = emitExpr(E->getRight());
+    Value *Result = nullptr;
+    switch (E->getOperatorInfo().getKind()) {
+        case tok::plus:
+            Result = Builder.CreateNSWAdd(Left, Right);
+            break;
+        case tok::minus:
+            Result = Builder.CreateNSWSub(Left, Right);
+            break;
+        case tok::star:
+            Result = Builder.CreateNSWMul(Left, Right);
+            break;
+        case tok::kw_DIV:
+            Result = Builder.CreateSDiv(Left, Right);
+            break;
+        case tok::kw_MOD:
+            Result = Builder.CreateSRem(Left, Right);
+            break;
+        case tok::equal:
+            Result = Builder.CreateICmpEQ(Left, Right);
+            break;
+        case tok::hash:
+            Result = Builder.CreateICmpNE(Left, Right);
+            break;
+        case tok::less:
+            Result = Builder.CreateICmpSLT(Left, Right);
+            break;
+        case tok::lessequal:
+            Result = Builder.CreateICmpSLE(Left, Right);
+            break;
+        case tok::greater:
+            Result = Builder.CreateICmpSGT(Left, Right);
+            break;
+        case tok::greaterequal:
+            Result = Builder.CreateICmpSGE(Left, Right);
+            break;
+        case tok::kw_AND:
+            Result = Builder.CreateAnd(Left, Right);
+            break;
+        case tok::kw_OR:
+            Result = Builder.CreateOr(Left, Right);
+            break;
+        case tok::slash:
+            // Divide by real numbers not supported.
+            LLVM_FALLTHROUGH;
+        default:
+            llvm_unreachable("Wrong operator");
+    }
+    return Result;
+}
+
+Value *CGProcedure::emitPrefixExpr(PrefixExpression *E) {
+    Value *Result = emitExpr(E->getExpr());
+    switch (E->getOperatorInfo().getKind()) {
+        case tok::plus:
+            // Identity - nothing to do.
+            break;
+        case tok::minus:
+            Result = Builder.CreateNeg(Result);
+            break;
+        case tok::kw_NOT:
+            Result = Builder.CreateNot(Result);
+            break;
+        default:
+            llvm_unreachable("Wrong operator");
+    }
+    return Result;
+}
+
 Value *CGProcedure::emitExpr(Expr *E) {
     if (auto *Infix = dyn_cast<InfixExpression>(E)) {
-
+        return emitInfixExpr(Infix);
+    } else if (auto *Prefix = dyn_cast<PrefixExpression>(E)) {
+        return emitPrefixExpr(Prefix);
+    } else if (auto *Var = dyn_cast<VariableAccess>(E)) {
+        auto *Decl = Var->getDecl();
+        // With more languages features in place, here you need
+        // to add array and record support.
+        return readVariable(Curr, Decl);
+    } else if (auto *Const = dyn_cast<ConstantAccess>(E)) {
+        return emitExpr(Const->getDcl()->getExpr());
+    } else if (auto *IntLit = dyn_cast<IntegerLiteral>(E)) {
+        return ConstantInt::get(CGM.Int64Ty, IntLit->getValue());
+    } else if (auto *BoolLit = dyn_cast<BooleanLiteral>(E)) {
+        return ConstantInt::get(CGM.Int1Ty, BoolLit->getValue());
     }
+    report_fatal_error("Unsupported expression");
+}
+
+void CGProcedure::emitStmt(AssignmentStatement *Stmt) {
+    auto *Val = emitExpr(Stmt->getExpr());
+    writeVariable(Curr, Stmt->getVar(), Val);
+}
+
+void CGProcedure::emitStmt(ProcedureCallStatement *Stmt) {
+    report_fatal_error("not implemented");
+}
+
+void CGProcedure::emitStmt(IfStatement *Stmt) {
+    bool HasElse = Stmt->getElseStmts().size() > 0;
+
+    // Create the required basic blocks.
+    BasicBlock *IfBB = BasicBlock::Create(CGM.getLLVMCtx(), "if.body", Fn);
+    BasicBlock *ElseBB = HasElse ? BasicBlock::Create(CGM.getLLVMCtx(), "else.body", Fn) : nullptr;
+
+    BasicBlock *AfterIfBB = BasicBlock::Create(CGM.getLLVMCtx(), "after.if", Fn);
+
+    Value *Cond = emitExpr(Stmt->getCond());
+    Builder.CreateCondBr(Cond, IfBB, HasElse ? ElseBB : AfterIfBB);
+    sealBlock(Curr);
+
+    setCurr(IfBB);
+    emit(Stmt->getIfStmts());
+    if (!Curr->getTerminator()) {
+        Builder.CreateBr(AfterIfBB);
+    }
+    sealBlock(Curr);
+
+    if (HasElse) {
+        setCurr(ElseBB);
+        emit(Stmt->getElseStmts());
+        if (!Curr->getTerminator()) {
+            Builder.CreateBr(AfterIfBB);
+        }
+        sealBlock(Curr);
+    }
+    setCurr(AfterIfBB);
 }
 
 void CGProcedure::emitStmt(WhileStatement *Stmt) {
@@ -230,6 +355,30 @@ void CGProcedure::emitStmt(WhileStatement *Stmt) {
     sealBlock(WhileCondBB);
 
     setCurr(AfterWhileBB);
+}
+
+void CGProcedure::emitStmt(ReturnStatement *Stmt) {
+    if (Stmt->getRetVal()) {
+        Value *RetVal = emitExpr(Stmt->getRetVal());
+        Builder.CreateRet(RetVal);
+    } else {
+        Builder.CreateRetVoid();
+    }
+}
+
+void CGProcedure::emit(const StmtList &Stmts) {
+    for (auto *S : Stmts) {
+        if (auto *Stmt = dyn_cast<AssignmentStatement>(S))
+            emitStmt(Stmt);
+        else if (auto *Stmt = dyn_cast<IfStatement>(S))
+            emitStmt(Stmt);
+        else if (auto *Stmt = dyn_cast<WhileStatement>(S))
+            emitStmt(Stmt);
+        else if (auto *Stmt = dyn_cast<ReturnStatement>(S))
+            emitStmt(Stmt);
+        else
+            llvm_unreachable("Unknown statement");
+    }
 }
 
 void CGProcedure::run(ProcedureDeclaration *Proc) {
@@ -260,6 +409,7 @@ void CGProcedure::run(ProcedureDeclaration *Proc) {
     }
 
     emit(Proc->getStmts());
+    // tinylang中的过程可能有隐式的return，所以还要检查最后一个基本块是否有合适的终止符
     if (!Curr->getTerminator()) {
         Builder.CreateRetVoid();
     }
