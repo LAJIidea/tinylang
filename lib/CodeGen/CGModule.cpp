@@ -13,7 +13,11 @@ using namespace tinylang;
 using namespace llvm;
 
 void CGModule::initialize() {
-
+    VoidTy = Type::getVoidTy(getLLVMCtx());
+    Int1Ty = Type::getInt1Ty(getLLVMCtx());
+    Int32Ty = Type::getInt32Ty(getLLVMCtx());
+    Int64Ty = Type::getInt64Ty(getLLVMCtx());
+    Int32Zero = ConstantInt::get(Int32Ty, 0, true);
 }
 
 llvm::Type *CGModule::convertType(TypeDeclaration *Ty) {
@@ -59,5 +63,15 @@ llvm::GlobalObject *CGModule::getGlobal(Decl *) {
 }
 
 void CGModule::run(ModuleDeclaration *Mod) {
-
+    for (auto *Decl : Mod->getDecls()) {
+        if (auto *Var = dyn_cast<VariableDeclaration>(Decl)) {
+            GlobalVariable *V = new GlobalVariable(*M, convertType(Var->getType()), false,
+                                                   GlobalVariable::PrivateLinkage, nullptr,
+                                                   mangleName(Var));
+            Globals[Var] = V;
+        } else if (auto *Proc = dyn_cast<ProcedureDeclaration>(Decl)) {
+            CGProcedure CGP(*this);
+            CGP.run(Proc);
+        }
+    }
 }
