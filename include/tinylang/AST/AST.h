@@ -19,11 +19,14 @@ namespace tinylang {
     class Decl;
     class FormalParameterDeclaration;
     class Expr;
+    class Selector;
     class Stmt;
+    class TypeDeclaration;
 
     using DeclList = std::vector<Decl *>;
     using FormalParamList = std::vector<FormalParameterDeclaration *>;
     using ExprList = std::vector<Expr *>;
+    using SelectorList = std::vector<Selector *>;
     using StmtList = std::vector<Stmt *>;
 
     class Ident {
@@ -39,11 +42,30 @@ namespace tinylang {
 
     using IdentList = std::vector<std::pair<llvm::SMLoc, llvm::StringRef>>;
 
+    class Field {
+        llvm::SMLoc Loc;
+        llvm::StringRef Name;
+        TypeDeclaration *Type;
+
+    public:
+        Field(llvm::SMLoc Loc, const llvm::StringRef &Name, TypeDeclaration *Type)
+            : Loc(Loc), Name(Name), Type(Type) {}
+        llvm::SMLoc getLoc() const { return Loc; }
+        const llvm::StringRef &getName() const { return Name; }
+        TypeDeclaration *getType() const { return Type; }
+    };
+    using FieldList = std::vector<Field>;
+
     class Decl {
     public:
         enum DeclKind {
             DK_Module,
             DK_Const,
+            DK_AliasType,
+            DK_ArrayType,
+            DK_PervasiveType,
+            DK_PointerType,
+            DK_RecordType,
             DK_Type,
             DK_Var,
             DK_Param,
@@ -107,11 +129,84 @@ namespace tinylang {
 
     class TypeDeclaration : public Decl {
     public:
-        TypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name)
+        TypeDeclaration(DeclKind Kind, Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name)
             : Decl(DK_Type, EnclosingDecl, Loc, Name) {}
 
         static bool classof(const Decl *D) {
-            return D->getKind() == DK_Type;
+            return D->getKind() >= DK_AliasType &&
+                   D->getKind() <= DK_RecordType;
+        }
+    };
+
+    class AliasTypeDeclaration : public TypeDeclaration {
+        TypeDeclaration *Type;
+
+    public:
+        AliasTypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name,
+                             TypeDeclaration *Type)
+            : TypeDeclaration(DK_AliasType, EnclosingDecl, Loc, Name), Type(Type) {}
+
+        TypeDeclaration *getType() const { return Type; }
+
+        static bool classof(const Decl *D) {
+            return D->getKind() == DK_AliasType;
+        }
+    };
+
+    class ArrayTypeDeclaration : public TypeDeclaration {
+        Expr *Nums;
+        TypeDeclaration *Type;
+
+    public:
+        ArrayTypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name, Expr *Nums,
+                             TypeDeclaration *Type)
+            : TypeDeclaration(DK_ArrayType, EnclosingDecl, Loc, Name), Nums(Nums), Type(Type) {}
+
+        Expr *getNums() const { return Nums; }
+        TypeDeclaration *getType() const { return Type; }
+
+        static bool classof(const Decl *D) {
+            return D->getKind() == DK_ArrayType;
+        }
+    };
+
+    class PervasiveTypeDeclaration : public TypeDeclaration {
+    public:
+        PervasiveTypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name)
+            : TypeDeclaration(DK_PervasiveType, EnclosingDecl, Loc, Name) {}
+
+        static bool classof(const Decl *D) {
+            return D->getKind() == DK_PervasiveType;
+        }
+    };
+
+    class PointerTypeDeclaration : public TypeDeclaration {
+        TypeDeclaration *Type;
+
+    public:
+        PointerTypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name,
+                               TypeDeclaration *Type)
+            : TypeDeclaration(DK_PointerType, EnclosingDecl, Loc, Name), Type(Type) {}
+
+        TypeDeclaration *getType() const { return Type; }
+
+        static bool classof(const Decl *D) {
+            return D->getKind() == DK_PointerType;
+        }
+    };
+
+    class RecordTypeDeclaration : public TypeDeclaration {
+        FieldList Fields;
+
+    public:
+        RecordTypeDeclaration(Decl *EnclosingDecl, llvm::SMLoc Loc, llvm::StringRef Name,
+                              const FieldList &Fields)
+            : TypeDeclaration(DK_RecordType, EnclosingDecl, Loc, Name), Fields(Fields) {}
+
+        const FieldList &getFields() const { return Fields; }
+
+        static bool classof(const Decl *D) {
+            return D->getKind() == DK_RecordType;
         }
     };
 
@@ -209,6 +304,7 @@ namespace tinylang {
             EK_Prefix,
             EK_Int,
             EK_Bool,
+            EK_Designator,
             EK_Var,
             EK_Const,
             EK_Func,
@@ -290,6 +386,97 @@ namespace tinylang {
 
         static bool classof(const Expr *E) {
             return E->getKind() == EK_Bool;
+        }
+    };
+
+    class Selector {
+    public:
+        enum SelectorKind {
+            SK_Index,
+            SK_Field,
+            SK_Dereference
+        };
+
+    private:
+        const SelectorKind Kind;
+
+        // The type decribes the base type.
+        // E.g. the component type of an index selector
+        TypeDeclaration *Type;
+
+    protected:
+        Selector(SelectorKind Kind, TypeDeclaration *Type)
+            : Kind(Kind), Type(Type) {}
+
+    public:
+        SelectorKind getKind() const { return Kind; }
+        TypeDeclaration *getType() const { return Type; }
+    };
+
+    class IndexSelector : public Selector {
+        Expr *Index;
+
+    public:
+        IndexSelector(Expr *Index, TypeDeclaration *Type)
+            : Selector(SK_Index, Type), Index(Index) {}
+
+        Expr *getIndex() const { return Index; }
+
+        static bool classof(const Selector *Sel) {
+            return Sel->getKind() == SK_Index;
+        }
+    };
+
+    class FieldSelector : public Selector {
+        uint32_t Index;
+        llvm::StringRef Name;
+
+    public:
+        FieldSelector(uint32_t Index, llvm::StringRef Name,
+                      TypeDeclaration *Type)
+            : Selector(SK_Field, Type), Index(Index), Name(Name) {}
+
+        uint32_t getIndex() const { return Index; }
+        const llvm::StringRef &getname() const { return Name; }
+
+        static bool classof(const Selector *Sel) {
+            return Sel->getKind() == SK_Field;
+        }
+    };
+
+    class DereferenceSelector :public Selector {
+    public:
+        DereferenceSelector(TypeDeclaration *Type)
+            : Selector(SK_Dereference, Type) {}
+
+        static bool classof(const Selector *Sel) {
+            return Sel->getKind() == SK_Dereference;
+        }
+    };
+
+    class Designator : public Expr {
+        Decl *Var;
+        SelectorList Selectors;
+
+    public:
+        Designator(VariableDeclaration *Var)
+            : Expr(EK_Designator, Var->getType(), false), Var(Var) {}
+
+        Designator(FormalParameterDeclaration *Param)
+            : Expr(EK_Designator, Param->getType(), false), Var(Param) {}
+
+        void addSelector(Selector *Sel) {
+            Selectors.push_back(Sel);
+            setType(Sel->getType());
+        }
+
+        Decl *getDecl() { return Var; }
+        const SelectorList &getSelectors() const {
+            return Selectors;
+        }
+
+        static bool classof(const Expr *E) {
+            return E->getKind() == EK_Designator;
         }
     };
 

@@ -54,6 +54,8 @@ namespace tinylang {
         void actOnImport(llvm::StringRef ModuleName, IdentList &Ids);
         void actOnConstantDeclaration(DeclList &Decls, llvm::SMLoc Loc,
                                       llvm::StringRef Name, Expr *E);
+        void actOnAliasTypeDeclaration(DeclList &Decls, llvm::SMLoc Loc,
+                                       llvm::StringRef Name, Decl *D);
         void actOnVariableDeclaration(DeclList &Decls, IdentList &Ids, Decl *D);
 
         void actOnFormalParameterDeclaration(FormalParamList &Params, IdentList &Ids,
@@ -84,6 +86,10 @@ namespace tinylang {
 
         Expr *actOnPrefixExpression(Expr *E, const OperatorInfo &Op);
         Expr *actOnIntegerLiteral(llvm::SMLoc Loc, llvm::StringRef Literal);
+        void actOnIndexSelector(Expr *Desig, llvm::SMLoc Loc, Expr *E);
+        void actOnFieldSelector(Expr *Desig, llvm::SMLoc Loc, llvm::StringRef Name);
+        void actOnDereferenceSelector(Expr *Desig, llvm::SMLoc Loc);
+        Expr *actOnDesignator(Decl *D);
         Expr *actOnVariable(Decl *D);
         Expr *actOnFunctionCall(Decl *D, ExprList &Params);
         Decl *actOnQualIdentPart(Decl *Prev, llvm::SMLoc Loc, llvm::StringRef Name);
