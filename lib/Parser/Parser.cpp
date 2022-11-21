@@ -195,7 +195,7 @@ bool Parser::parseTypeDeclaration(DeclList &Decls) {
         Decl *D;
         if (parseQualident(D))
             goto _error;
-        // todo actOnAliasTypeDeclaration
+        Actions.actOnAliasTypeDeclaration(Decls, Loc, Name, D);
     } else if (Tok.is(tok::kw_POINTER)) {
         advance();
         if (expect(tok::kw_TO))
@@ -204,7 +204,7 @@ bool Parser::parseTypeDeclaration(DeclList &Decls) {
         advance();
         if (parseQualident(D))
             goto _error;
-        // todo actOnPointerTypeDeclaration
+        Actions.actOnPointerTypeDeclaration(Decls, Loc, Name, D);
     } else if (Tok.is(tok::kw_ARRAY)) {
         advance();
         if (expect(tok::l_square))
@@ -221,7 +221,7 @@ bool Parser::parseTypeDeclaration(DeclList &Decls) {
         advance();
         if (parseQualident(D))
             goto _error;
-        // todo actOnArrayTypeDeclaration
+        Actions.actOnArrayTypeDeclaration(Decls, Loc, Name, E, D);
     } else if (Tok.is(tok::kw_RECORD)) {
         FieldList  Fields;
         advance();
@@ -229,7 +229,7 @@ bool Parser::parseTypeDeclaration(DeclList &Decls) {
             goto _error;
         if (expect(tok::kw_END))
             goto _error;
-        // todo actOnRecordTypeDeclaration
+        Actions.actOnRecordTypeDeclaration(Decls, Loc, Name, Fields);
         advance();
     } else {
         /*ERROR*/
@@ -263,14 +263,14 @@ _error:
     return false;
 }
 
-bool Parser::parseField(FieldList &Field) {
+bool Parser::parseField(FieldList &Fields) {
     Decl *D;
     IdentList Ids;
     if (parseIdentList(Ids))
         goto _error;
     if (parseQualident(D))
         goto _error;
-    // todo actOnFiledDeclaration
+    Actions.actOnFieldDeclaration(Fields, Ids, D);
     return false;
 _error:
     while (!Tok.isOneOf(tok::semi, tok::kw_END)) {
@@ -441,13 +441,12 @@ bool Parser::parseStatement(StmtList &Stmts) {
         if (parseQualident(D))
             goto _error;
         if (!Tok.is(tok::l_paren)) {
-            // todo finish actOnDesignator
             Desig = Actions.actOnDesignator(D);
             if (parseSelectors(Desig))
                 goto _error;
             if (consume(tok::colonequal))
                 goto _error;
-            // todo modify actOnAssignment
+            Actions.actOnAssignment(Stmts, Loc, Desig, E);
 //            Actions.actOnAssignment(Stmts, Loc, Desig, E);
         }
 //        if (Tok.is(tok::colonequal)) {
@@ -806,7 +805,6 @@ bool Parser::parseFactor(Expr *&E) {
 //            E = Actions.actOnVariable(D);
 //        }
         else {
-            // todo finish actOnDesignator
             E = Actions.actOnDesignator(D);
             if (parseSelectors(E))
                 goto _error;
@@ -845,7 +843,6 @@ _error:
 bool Parser::parseSelectors(Expr *&E) {
     while (Tok.isOneOf(tok::period, tok::l_square, tok::caret)) {
         if (Tok.is(tok::caret)) {
-            // todo finish actOnDereferenceSelector
             Actions.actOnDereferenceSelector(E, Tok.getLocation());
             advance();
         } else if (Tok.is(tok::l_square)) {
@@ -856,14 +853,12 @@ bool Parser::parseSelectors(Expr *&E) {
                 goto _error;
             if (expect(tok::r_square))
                 goto _error;
-            // todo finish actOnIndexSelector
             Actions.actOnIndexSelector(E, Loc, IndexE);
             advance();
         } else if (Tok.is(tok::period)) {
             advance();
             if (expect(tok::identifier))
                 goto _error;
-            // todo finish actOnFieldSelector
             Actions.actOnFieldSelector(E, Tok.getLocation(), Tok.getIdentifier());
             advance();
         }

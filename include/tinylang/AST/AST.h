@@ -548,14 +548,14 @@ namespace tinylang {
     };
 
     class AssignmentStatement : public Stmt {
-        VariableDeclaration *Var;
+        Designator *Var;
         Expr *E;
 
     public:
-        AssignmentStatement(VariableDeclaration *Var, Expr *E)
+        AssignmentStatement(Designator *Var, Expr *E)
                 : Stmt(SK_Assign), Var(Var), E(E) {}
 
-        VariableDeclaration *getVar() { return Var; }
+        Designator *getVar() { return Var; }
         Expr *getExpr() { return E; }
 
         static bool classof(const Stmt *S) {

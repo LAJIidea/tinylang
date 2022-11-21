@@ -3,6 +3,7 @@
 //
 
 #include "tinylang/Sema/Sema.h"
+#include <llvm/ADT/StringSet.h>
 
 using namespace tinylang;
 using namespace llvm;
@@ -49,7 +50,7 @@ void Sema::checkFormalAndActualParameters(SMLoc Loc, const FormalParamList &Form
         Expr *Arg = *A;
         if (F->getType() != Arg->getType())
             Diags.report(Loc, diag::err_type_of_formal_and_actual_parameter_not_compatible);
-        if (F->isVar() && isa<VariableAccess>(Arg))
+        if (F->isVar() && isa<Designator>(Arg))
             Diags.report(Loc, diag::err_var_parameter_requires_var);
     }
 }
@@ -58,8 +59,8 @@ void Sema::initialize() {
     // Setup global scope.
     CurrentScope = new Scope();
     CurrentDecl = nullptr;
-    IntegerType = new TypeDeclaration(CurrentDecl, SMLoc(), "INTEGER");
-    BooleanType = new TypeDeclaration(CurrentDecl, SMLoc(), "BOOLEAN");
+    IntegerType = new PervasiveTypeDeclaration(CurrentDecl, SMLoc(), "INTEGER");
+    BooleanType = new PervasiveTypeDeclaration(CurrentDecl, SMLoc(), "BOOLEAN");
     TrueLiteral = new BooleanLiteral(true, BooleanType);
     FalseLiteral = new BooleanLiteral(false, BooleanType);
     TrueConst = new ConstantDeclaration(CurrentDecl, SMLoc(), "TRUE", TrueLiteral);
@@ -91,6 +92,78 @@ void Sema::actOnImport(StringRef ModuleName, IdentList &Ids) {
 void Sema::actOnConstantDeclaration(DeclList &Decls, llvm::SMLoc Loc, StringRef Name, Expr *E) {
     assert(CurrentScope && "CurrentScope not set");
     ConstantDeclaration *Decl = new ConstantDeclaration(CurrentDecl, Loc, Name, E);
+    if (CurrentScope->insert(Decl))
+        Decls.push_back(Decl);
+    else
+        Diags.report(Loc, diag::err_symbold_declared, Name);
+}
+
+void Sema::actOnAliasTypeDeclaration(DeclList &Decls, SMLoc Loc, StringRef Name, Decl *D) {
+    assert(CurrentScope && "CurrentScope not set");
+    if (TypeDeclaration *Ty = dyn_cast<TypeDeclaration>(D)) {
+        AliasTypeDeclaration *Decl = new AliasTypeDeclaration(CurrentDecl, Loc, Name, Ty);
+        if (CurrentScope->insert(Decl))
+            Decls.push_back(Decl);
+        else
+            Diags.report(Loc, diag::err_symbold_declared, Name);
+    } else {
+        Diags.report(Loc, diag::err_vardecl_requires_type);
+    }
+}
+
+void Sema::actOnArrayTypeDeclaration(DeclList &Decls, SMLoc Loc, StringRef Name, Expr *E, Decl *D) {
+    assert(CurrentScope && "CurrentScope not set");
+    if (E && E->isConst() &&
+        E->getType()->getName() == "INTEGER") {
+        if (TypeDeclaration *Ty = dyn_cast<TypeDeclaration>(D)) {
+            ArrayTypeDeclaration *Decl = new ArrayTypeDeclaration(CurrentDecl, Loc, Name, E, Ty);
+            if (CurrentScope->insert(Decl))
+                Decls.push_back(Decl);
+            else
+                Diags.report(Loc, diag::err_symbold_declared, Name);
+        } else {
+            Diags.report(Loc, diag::err_vardecl_requires_type);
+        }
+    }
+}
+
+void Sema::actOnPointerTypeDeclaration(DeclList &Decls, SMLoc Loc, StringRef Name, Decl *D) {
+    assert(CurrentScope && "CurrentScope not set");
+    if (TypeDeclaration *Ty = dyn_cast<TypeDeclaration>(D)) {
+        PointerTypeDeclaration *Decl = new PointerTypeDeclaration(CurrentDecl, Loc, Name, Ty);
+        if (CurrentScope->insert(Decl))
+            Decls.push_back(Decl);
+        else
+            Diags.report(Loc, diag::err_symbold_declared, Name);
+    } else {
+        Diags.report(Loc, diag::err_vardecl_requires_type);
+    }
+}
+
+void Sema::actOnFieldDeclaration(FieldList &Fields, IdentList &Ids, Decl *D) {
+    if (TypeDeclaration *Ty = dyn_cast<TypeDeclaration>(D)) {
+        for (auto I = Ids.begin(); I != Ids.end(); ++I) {
+            SMLoc Loc = I->first;
+            StringRef Name = I->second;
+            Fields.emplace_back(Loc, Name, Ty);
+        }
+    } else if (!Ids.empty()) {
+        SMLoc Loc = Ids.front().first;
+        Diags.report(Loc, diag::err_vardecl_requires_type);
+    }
+}
+
+void Sema::actOnRecordTypeDeclaration(DeclList &Decls, SMLoc Loc, StringRef Name, const FieldList &Fields) {
+    assert(CurrentScope && "CurrentScope not set");
+    StringSet<> FiledSet;
+    for (const auto &F : Fields) {
+        if (FiledSet.find(F.getName()) != FiledSet.end()) {
+            Diags.report(F.getLoc(), diag::err_symbold_declared, F.getName());
+            return;
+        }
+        FiledSet.insert(F.getName());
+    }
+    RecordTypeDeclaration *Decl = new RecordTypeDeclaration(CurrentDecl, Loc, Name, Fields);
     if (CurrentScope->insert(Decl))
         Decls.push_back(Decl);
     else
@@ -160,8 +233,8 @@ Sema::actOnProcedureDeclaration(ProcedureDeclaration *ProcDecl, SMLoc Loc, Strin
     ProcDecl->setStmts(Stmts);
 }
 
-void Sema::actOnAssignment(StmtList &Stmts, SMLoc Loc, Decl *D, Expr *E) {
-    if (auto Var = dyn_cast<VariableDeclaration>(D)) {
+void Sema::actOnAssignment(StmtList &Stmts, SMLoc Loc, Expr *D, Expr *E) {
+    if (auto Var = dyn_cast<Designator>(D)) {
         if (Var->getType() != E->getType()) {
             Diags.report(Loc, diag::err_types_for_operator_not_compatible,
                          tok::getPunctuatorSpelling(tok::colonequal));
@@ -289,7 +362,7 @@ Expr *Sema::actOnPrefixExpression(Expr *E, const OperatorInfo &Op) {
 
     if (Op.getKind() == tok::minus) {
         bool Ambiguous = true;
-        if (isa<IntegerLiteral>(E) || isa<VariableAccess>(E) ||
+        if (isa<IntegerLiteral>(E) || isa<Designator>(E) ||
                 isa<ConstantAccess>(E))
             Ambiguous = false;
         else if (auto *Infix = dyn_cast<InfixExpression>(E)) {
@@ -313,6 +386,62 @@ Expr *Sema::actOnIntegerLiteral(SMLoc Loc, StringRef Literal) {
     }
     llvm::APInt Value(64, Literal, Radix);
     return new IntegerLiteral(Loc, llvm::APSInt(Value, false), IntegerType);
+}
+
+void Sema::actOnIndexSelector(Expr *Desig, llvm::SMLoc Loc, Expr *E) {
+    if (auto *D = dyn_cast<Designator>(Desig)) {
+        if (auto *Ty = dyn_cast<ArrayTypeDeclaration>(D->getType())) {
+            D->addSelector(new IndexSelector(E, Ty->getType()));
+        }
+        // todo Error message
+    }
+    // todo Error message
+}
+
+void Sema::actOnFieldSelector(Expr *Desig, llvm::SMLoc Loc, llvm::StringRef Name) {
+    // todo implement
+    if (auto *D = dyn_cast<Designator>(Desig)) {
+        if (auto *R = dyn_cast<RecordTypeDeclaration>(D->getType())) {
+            uint32_t Index = 0;
+            for (const auto &F : R->getFields()) {
+                if (F.getName() == Name) {
+                    D->addSelector(new FieldSelector(Index, Name, F.getType()));
+                    return;
+                }
+                ++Index;
+            }
+            // todo Error message
+        }
+        // todo Error message
+    }
+    // todo Error message
+}
+
+void Sema::actOnDereferenceSelector(Expr *Desig, llvm::SMLoc Loc) {
+    if (auto *D = dyn_cast<Designator>(Desig)) {
+        if (auto *Ty = dyn_cast<PointerTypeDeclaration>(D->getType())) {
+            D->addSelector(new DereferenceSelector(Ty->getType()));
+        }
+        // todo Error message
+    }
+    // todo Error message
+}
+
+Expr *Sema::actOnDesignator(Decl *D) {
+    if (!D)
+        return nullptr;
+    if (auto *V = dyn_cast<VariableDeclaration>(D))
+        return new Designator(V);
+    else if (auto *P = dyn_cast<FormalParameterDeclaration>(D))
+        return new Designator(P);
+    else if (auto *C = dyn_cast<ConstantDeclaration>(D)) {
+        if (C == TrueConst)
+            return TrueLiteral;
+        if (C == FalseConst)
+            return FalseLiteral;
+        return new ConstantAccess(C);
+    }
+    return nullptr;
 }
 
 Expr *Sema::actOnVariable(Decl *D) {

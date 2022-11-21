@@ -201,12 +201,13 @@ int main(int argc, const char **argv_)
         SrcMgr.AddNewSourceBuffer(std::move(*FileOrErr), llvm::SMLoc());
 
         auto lexer = Lexer(SrcMgr, Diags);
+        auto ASTCtx = ASTContext(SrcMgr, F);
         auto sema = Sema(Diags);
         auto parser = Parser(lexer, sema);
         auto *Mod = parser.parse();
         if (Mod && !Diags.nunErrors()) {
             llvm::LLVMContext Ctx;
-            if (CodeGenerator *CG = CodeGenerator::create(Ctx, TM)) {
+            if (CodeGenerator *CG = CodeGenerator::create(Ctx, ASTCtx, TM)) {
                 std::unique_ptr<llvm::Module> M = CG->run(Mod, F);
                 if (!emit(argv_[0], M.get(), TM, F)) {
                     llvm::WithColor::error(llvm::errs(), argv_[0]) << "Error writing output\n";

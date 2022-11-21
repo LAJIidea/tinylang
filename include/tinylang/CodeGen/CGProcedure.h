@@ -47,14 +47,15 @@ namespace tinylang {
         llvm::Value *readLocalVariable(llvm::BasicBlock *BB, Decl *Decl);
         llvm::Value *readLocalVariableRecursive(llvm::BasicBlock *BB, Decl *Decl);
         llvm::PHINode *addEmptyPhi(llvm::BasicBlock *BB, Decl *Decl);
-        void addPhiOperands(llvm::BasicBlock *BB, Decl *Decl, llvm::PHINode *Phi);
-        void optimizePhi(llvm::PHINode *Phi);
+        llvm::Value *addPhiOperands(llvm::BasicBlock *BB, Decl *Decl, llvm::PHINode *Phi);
+        llvm::Value *optimizePhi(llvm::PHINode *Phi);
         void sealBlock(llvm::BasicBlock *BB);
 
         llvm::DenseMap<FormalParameterDeclaration *, llvm::Argument *> FormalParams;
+        llvm::DenseMap<Decl *, llvm::DILocalVariable *> DIVariables;
 
         void writeVariable(llvm::BasicBlock *BB, Decl *Decl, llvm::Value *Val);
-        llvm::Value *readVariable(llvm::BasicBlock *BB, Decl *Decl);
+        llvm::Value *readVariable(llvm::BasicBlock *BB, Decl *Decl, bool LoadVal = true);
 
         llvm::Type *mapType(Decl *Decl);
         llvm::FunctionType *createFunctionType(ProcedureDeclaration *Proc);
@@ -68,6 +69,10 @@ namespace tinylang {
         void setCurr(llvm::BasicBlock *BB) {
             Curr = BB;
             Builder.SetInsertPoint(Curr);
+        }
+
+        llvm::BasicBlock *createBasicBlock(const llvm::Twine &Name, llvm::BasicBlock *InsertBefore = nullptr) {
+            return llvm::BasicBlock::Create(CGM.getLLVMCtx(), Name, Fn, InsertBefore);
         }
 
         llvm::Value *emitInfixExpr(InfixExpression *E);

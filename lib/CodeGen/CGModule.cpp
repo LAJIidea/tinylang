@@ -5,12 +5,21 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/ADT/StringExtras.h>
+#include <llvm/Support/CommandLine.h>
 
 #include "tinylang/CodeGen/CGModule.h"
 #include "tinylang/CodeGen/CGProcedure.h"
 
 using namespace tinylang;
 using namespace llvm;
+
+static llvm::cl::opt<bool>
+        Debug("g", llvm::cl::desc("Generate debug information"), llvm::cl::init(false));
+
+CGModule::CGModule(ASTContext &ASTCtx, llvm::Module *M)
+    : ASTCtx(ASTCtx), M(M) {
+    initialize();
+}
 
 void CGModule::initialize() {
     VoidTy = Type::getVoidTy(getLLVMCtx());
@@ -21,14 +30,32 @@ void CGModule::initialize() {
 }
 
 llvm::Type *CGModule::convertType(TypeDeclaration *Ty) {
-    if (Ty->getName() == "INTEGER")
-        return Int64Ty;
-    else if (Ty->getName() == "BOOLEAN")
-        return Int1Ty;
-    else {
-        report_fatal_error("Unsupported type");
-        return nullptr;
+    if (Type *T = TypeCache[Ty])
+        return T;
+
+    if (isa<PervasiveTypeDeclaration>(Ty)) {
+        if (Ty->getName() == "INTEGER")
+            return Int64Ty;
+        else if (Ty->getName() == "BOOLEAN")
+            return Int1Ty;
+    } else if (auto *AliasTy = dyn_cast<AliasTypeDeclaration>(Ty)) {
+        Type *T = convertType(AliasTy->getType());
+        return TypeCache[Ty] = T;
+    } else if (auto *ArrayTy = dyn_cast<ArrayTypeDeclaration>(Ty)) {
+        Type *Component = convertType(ArrayTy->getType());
+        Expr *Nums = ArrayTy->getNums();
+        uint64_t NumElements = 5; // todo Eval Nums
+        Type *T = llvm::ArrayType::get(Component, NumElements);
+        return TypeCache[Ty] = T;
+    } else if (auto *RecordTy = dyn_cast<RecordTypeDeclaration>(Ty)) {
+        SmallVector<Type *, 4> Elements;
+        for (const auto &F : RecordTy->getFields()) {
+            Elements.push_back(convertType(F.getType()));
+        }
+        Type *T = StructType::create(Elements, RecordTy->getName(), false);
+        return TypeCache[Ty] = T;
     }
+    report_fatal_error("Unsupported type");
 }
 
 // 函数(以及全局变量)有一个附加的链接样式。使用链接样式，我们定义了符号名的可见性，以及如果多个符号具有相同的名称一个发生什么.
@@ -58,8 +85,8 @@ std::string CGModule::mangleName(Decl *D) {
     return Mangled;
 }
 
-llvm::GlobalObject *CGModule::getGlobal(Decl *) {
-    return nullptr;
+llvm::GlobalObject *CGModule::getGlobal(Decl *D) {
+    return Globals[D];
 }
 
 void CGModule::run(ModuleDeclaration *Mod) {

@@ -59,7 +59,7 @@ namespace tinylang {
         bool parseConstantDeclaration(DeclList &Decls);
         bool parseTypeDeclaration(DeclList &Decls);
         bool parseFieldList(FieldList &Fields);
-        bool parseField(FieldList &Field);
+        bool parseField(FieldList &Fields);
         bool parseVariableDeclaration(DeclList &Decls);
         bool parseProcedureDeclaration(DeclList &ParentDecls);
         bool parseFormalParameters(FormalParamList &Params,

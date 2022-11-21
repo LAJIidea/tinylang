@@ -8,8 +8,8 @@ using namespace tinylang;
 using namespace llvm;
 
 // 为代码生成器引入工厂方式
-CodeGenerator *CodeGenerator::create(LLVMContext &Ctx, TargetMachine *TM) {
-    return new CodeGenerator(Ctx, TM);
+CodeGenerator *CodeGenerator::create(LLVMContext &Ctx, ASTContext &ASTCtx, TargetMachine *TM) {
+    return new CodeGenerator(Ctx, ASTCtx, TM);
 }
 
 /**
@@ -23,7 +23,7 @@ std::unique_ptr<llvm::Module> CodeGenerator::run(ModuleDeclaration *CM, std::str
     std::unique_ptr<Module> M = std::make_unique<Module>(FileName, Ctx);
     M->setTargetTriple(TM->getTargetTriple().getTriple());
     M->setDataLayout(TM->createDataLayout());
-    CGModule CGM(M.get());
+    CGModule CGM(ASTCtx, M.get());
     CGM.run(CM);
     return M;
 }

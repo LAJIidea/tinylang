@@ -56,6 +56,13 @@ namespace tinylang {
                                       llvm::StringRef Name, Expr *E);
         void actOnAliasTypeDeclaration(DeclList &Decls, llvm::SMLoc Loc,
                                        llvm::StringRef Name, Decl *D);
+        void actOnArrayTypeDeclaration(DeclList &Decls, llvm::SMLoc Loc,
+                                       llvm::StringRef Name, Expr *E, Decl *D);
+        void actOnPointerTypeDeclaration(DeclList &Decls, llvm::SMLoc Loc,
+                                         llvm::StringRef Name, Decl *D);
+        void actOnFieldDeclaration(FieldList &Fields, IdentList &Ids, Decl *D);
+        void actOnRecordTypeDeclaration(DeclList &Decls, llvm::SMLoc Loc,
+                                        llvm::StringRef Name, const FieldList &Fields);
         void actOnVariableDeclaration(DeclList &Decls, IdentList &Ids, Decl *D);
 
         void actOnFormalParameterDeclaration(FormalParamList &Params, IdentList &Ids,
@@ -69,7 +76,7 @@ namespace tinylang {
                 ProcedureDeclaration *ProcDecl, llvm::SMLoc Loc,
                 llvm::StringRef Name, DeclList &Decls, StmtList &Stmts);
 
-        void actOnAssignment(StmtList &Stmts, llvm::SMLoc Loc, Decl *D, Expr *E);
+        void actOnAssignment(StmtList &Stmts, llvm::SMLoc Loc, Expr *D, Expr *E);
         void actOnProcCall(StmtList &Stmts, llvm::SMLoc Loc, Decl *D, ExprList &Params);
         void actOnIfStatement(StmtList &Stmts, llvm::SMLoc Loc,
                               Expr *Cond, StmtList &IfStmts,
